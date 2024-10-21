@@ -1,41 +1,77 @@
 import Expense from '../models/expenseModel.js';
-
-import fs from 'fs';
-import path from 'path';
 import User from '../models/userModel.js';
-
 import pdfMake from 'pdfmake/build/pdfmake.js';
 import pdfFonts from 'pdfmake/build/vfs_fonts.js';
 
 
 pdfMake.vfs = pdfFonts.pdfMake.vfs; // the virtual file system
 
-export const addExpense = async (req, res) => {
+export const addExpense = async (req, res , next) => {
   try {
     const { amount, splitType, participants } = req.body;
+
+    // Data validation
+    if (typeof amount !== 'number' || amount <= 0) {
+      return res.status(400).json({ message: 'Amount must be a positive number' });
+    }
+
+    const validSplitTypes = ['equal', 'exact', 'percentage'];
+    if (!splitType || !validSplitTypes.includes(splitType)) {
+      return res.status(400).json({ message: 'Invalid split type provided' });
+    }
+
+    if (!Array.isArray(participants) || participants.length === 0) {
+      return res.status(400).json({ message: 'Participants must be a non-empty array' });
+    }
+
+    participants.forEach((participant, index) => {
+      if (!participant.userId || !/^[0-9a-fA-F]{24}$/.test(participant.userId)) {
+        return res.status(400).json({ message: `Invalid user ID for participant at index ${index}` });
+      }
+
+      if (splitType === 'exact' && (typeof participant.amountOwed !== 'number' || participant.amountOwed < 0)) {
+        return res.status(400).json({ message: `Invalid amount owed for participant at index ${index}` });
+      }
+
+      if (splitType === 'percentage' && (typeof participant.percentage !== 'number' || participant.percentage < 0)) {
+        return res.status(400).json({ message: `Invalid percentage for participant at index ${index}` });
+      }
+    });
+
+    // Create and save expense
     const expense = new Expense({ amount, splitType, participants });
     await expense.save();
     res.status(201).json({ message: 'Expense added successfully', expense });
   } catch (error) {
-    res.status(500).json({ message: 'Error adding expense', error });
+    error.statusCode = 500; 
+    next(error); 
   }
 };
 
-export const getUserExpenses = async (req, res) => {
+export const getUserExpenses = async (req, res , next) => {
   try {
     const expenses = await Expense.find({ 'participants.userId': req.params.userId });
+    if (!expenses.length) {
+      return res.status(404).json({ message: 'No expenses found for this user' });
+    }
     res.status(200).json(expenses);
   } catch (error) {
-    res.status(500).json({ message: 'Error fetching expenses', error });
+    error.statusCode = 500; 
+    next(error); 
   }
 };
 
-export const getAllExpenses = async (req, res) => {
+export const getAllExpenses = async (req, res, next) => {
   try {
     const expenses = await Expense.find();
+    if (!expenses.length) {
+      return res.status(404).json({ message: 'No expenses found' });
+    }
+    
     res.status(200).json(expenses);
   } catch (error) {
-    res.status(500).json({ message: 'Error fetching expenses', error });
+    error.statusCode = 500; 
+    next(error); 
   }
 };
 
@@ -89,7 +125,7 @@ export const generateOverallBalanceSheet = async (req, res) => {
       }
 
       // Prepare table data for PDF
-      const tableBody = [['Expense #', 'User', 'Individual Amount']]; // Header Row
+      const tableBody = [['Expense #', 'User', 'Individual Amount']]; 
 
       expenses.forEach((exp, index) => {
           const numParticipants = exp.participants.length;
@@ -125,7 +161,7 @@ export const generateOverallBalanceSheet = async (req, res) => {
                       widths: ['*', '*', '*'],
                       body: tableBody,
                   },
-                  layout: 'lightHorizontalLines', // Use a simple layout
+                  layout: 'lightHorizontalLines', 
               },
           ],
           styles: {
@@ -143,11 +179,11 @@ export const generateOverallBalanceSheet = async (req, res) => {
           res.setHeader('Content-Type', 'application/pdf');
           res.setHeader('Content-Disposition', `attachment; filename="overall-balance-sheet.pdf"`);
           res.setHeader('Content-Length', buffer.length);
-          res.end(buffer); // Send the buffer as a response
+          res.end(buffer);
       });
 
   } catch (error) {
-      console.error('Error generating overall balance sheet:', error); // Log the error
+      console.error('Error generating overall balance sheet:', error); 
       res.status(500).json({ message: 'Error generating overall balance sheet', error: error.message });
   }
 };
