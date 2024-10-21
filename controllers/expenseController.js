@@ -82,165 +82,180 @@ export const getAllExpenses = async (req, res) => {
 
 export const generateOverallBalanceSheet = async (req, res) => {
   try {
-    const expenses = await Expense.find().populate('participants.userId', 'name');
+      const expenses = await Expense.find().populate('participants.userId', 'name');
 
-    if (!expenses.length) {
-      return res.status(404).json({ message: 'No expenses found' });
-    }
+      if (!expenses.length) {
+          return res.status(404).json({ message: 'No expenses found' });
+      }
 
-    // Prepare table data // Header Row
-    const tableBody = [['Expense #', 'User', 'Individual Amount']]; 
+      // Prepare table data for PDF
+      const tableBody = [['Expense #', 'User', 'Individual Amount']]; 
 
-    expenses.forEach((exp, index) => {
-      const numParticipants = exp.participants.length; 
-      let individualAmount = 0;
+      expenses.forEach((exp, index) => {
+          const numParticipants = exp.participants.length;
 
-      exp.participants.forEach(participant => {
-        
-        if (exp.splitType === 'equal') {
-          individualAmount = (exp.amount / numParticipants).toFixed(2);
-        } else if (exp.splitType === 'exact') {
-          individualAmount = participant.amountOwed; 
-        } else if (exp.splitType === 'percentage') {
-          individualAmount = ((exp.amount * participant.percentage) / 100).toFixed(2);
-        }
+          exp.participants.forEach(participant => {
+              let individualAmount = 0;
 
-        // Add a row for each participant
-        tableBody.push([
-          `Expense ${index + 1}`, 
-          participant.userId.name || 'Unknown', 
-          `₹${individualAmount}` 
-        ]);
+              if (exp.splitType === 'equal') {
+                  individualAmount = (exp.amount / numParticipants).toFixed(2);
+              } else if (exp.splitType === 'exact') {
+                  individualAmount = participant.amountOwed;
+              } else if (exp.splitType === 'percentage') {
+                  individualAmount = ((exp.amount * participant.percentage) / 100).toFixed(2);
+              }
+
+              // Add a row for each participant
+              tableBody.push([
+                  `Expense ${index + 1}`, 
+                  participant.userId.name || 'Unknown', 
+                  `₹${individualAmount}` 
+              ]);
+          });
       });
-    });
 
-    // Define PDF document
-    const docDefinition = {
-      content: [
-        { text: 'Overall Balance Sheet', style: 'header' },
-        { text: '\n' },
-        {
-          table: {
-            headerRows: 1,
-            widths: ['*', '*', '*'],
-            body: tableBody,
+      // Define PDF document structure
+      const docDefinition = {
+          content: [
+              { text: 'Overall Balance Sheet', style: 'header' },
+              { text: '\n' },
+              {
+                  table: {
+                      headerRows: 1,
+                      widths: ['*', '*', '*'],
+                      body: tableBody,
+                  },
+                  layout: 'lightHorizontalLines', 
+              },
+          ],
+          styles: {
+              header: {
+                  fontSize: 25,
+                  bold: true,
+                  alignment: 'center',
+              },
           },
-          layout: 'lightHorizontalLines', 
-        },
-      ],
-      styles: {
-        header: {
-          fontSize: 25,
-          bold: true,
-          alignment: 'center',
-        },
-      },
-    };
+      };
 
-    // Create PDF and save it
-    const pdfDoc = pdfMake.createPdf(docDefinition);
-    const filePath = path.resolve('./balance-sheets/overall-balance-sheet.pdf');
+      // Create PDF
+      const pdfDoc = pdfMake.createPdf(docDefinition);
+      pdfDoc.getBuffer((buffer) => {
+          const filePath = path.resolve('./balance-sheets/overall-balance-sheet.pdf');
 
-    pdfDoc.getBuffer((buffer) => {
-      fs.writeFileSync(filePath, buffer);
-      res.status(200).json({ message: 'Overall balance sheet generated', filePath });
-    });
+          // Save the PDF to a file
+          fs.writeFileSync(filePath, buffer);
+
+          // Send the PDF as a response
+          res.setHeader('Content-Type', 'application/pdf');
+          res.setHeader('Content-Disposition', `attachment; filename="overall-balance-sheet.pdf"`);
+          res.setHeader('Content-Length', buffer.length);
+          res.end(buffer); 
+      });
 
   } catch (error) {
-    res.status(500).json({ message: 'Error generating balance sheet', error });
+      console.error('Error generating overall balance sheet:', error); 
+      res.status(500).json({ message: 'Error generating overall balance sheet', error: error.message });
   }
 };
-
 
 
 
 
 export const generateBalanceSheet = async (req, res) => {
   try {
-    const userId = req.params.userId;
-    const user = await User.findById(userId); 
-    const expenses = await Expense.find({ 'participants.userId': userId }).populate('participants.userId', 'name');
+      const userId = req.params.userId;
+      const user = await User.findById(userId);
+      const expenses = await Expense.find({ 'participants.userId': userId }).populate('participants.userId', 'name');
 
-    if (!user || !expenses.length) {
-      return res.status(404).json({ message: 'No expenses found for this user' });
-    }
-
-    
-    const tableData = {
-      headers: ['Expense #', 'Total Amount', 'Amount Owed'],
-      rows: [],
-    };
-
-    let totalUserExpense = 0; 
-    let expenseIndex = 1; 
-
-    
-    expenses.forEach(exp => {
-      const userParticipant = exp.participants.find(p => p.userId._id.toString() === userId);
-
-      if (!userParticipant) return; 
-
- 
-      let userAmountOwed;
-      if (exp.splitType === 'equal') {
-        userAmountOwed = (exp.amount / exp.participants.length).toFixed(2);
-      } else if (exp.splitType === 'exact') {
-        userAmountOwed = userParticipant.amountOwed;
-      } else if (exp.splitType === 'percentage') {
-        userAmountOwed = ((exp.amount * userParticipant.percentage) / 100).toFixed(2);
+      if (!user || !expenses.length) {
+          return res.status(404).json({ message: 'No expenses found for this user' });
       }
 
-      totalUserExpense += parseFloat(userAmountOwed); 
+      // Prepare table data for PDF
+      const tableData = {
+          headers: ['Expense #', 'Total Amount', 'Amount Owed'],
+          rows: [],
+      };
 
-     
-      tableData.rows.push([`${expenseIndex}`, `₹${exp.amount}`, `₹${userAmountOwed}`]);
-      expenseIndex++;
-    });
+      let totalUserExpense = 0; 
+      let expenseIndex = 1;
 
-    tableData.rows.push([
-      { text: 'Total', colSpan: 2, alignment: 'right' },
-      '',
-      `₹${totalUserExpense}`
-    ]);
+      // Populate the table data
+      expenses.forEach(exp => {
+          const userParticipant = exp.participants.find(p => p.userId._id.toString() === userId);
 
-    // Define PDF document
-    const docDefinition = {
-      content: [
-        { text: `Expense Sheet for ${user.name}`, style: 'header' },
-        { text: '\n' },
-        {
-          table: {
-            headerRows: 1,
-            widths: ['*', '*', '*'],
-            body: [
-              tableData.headers,
-              ...tableData.rows.map(row => row.map(cell => ({ text: cell, alignment: 'center' })))
-            ],
+          if (!userParticipant) return;
+
+          let userAmountOwed;
+          if (exp.splitType === 'equal') {
+              userAmountOwed = (exp.amount / exp.participants.length).toFixed(2);
+          } else if (exp.splitType === 'exact') {
+              userAmountOwed = userParticipant.amountOwed;
+          } else if (exp.splitType === 'percentage') {
+              userAmountOwed = ((exp.amount * userParticipant.percentage) / 100).toFixed(2);
+          }
+
+          totalUserExpense += parseFloat(userAmountOwed);
+
+          // Add to the table rows
+          tableData.rows.push([`${expenseIndex}`, `₹${exp.amount}`, `₹${userAmountOwed}`]);
+          expenseIndex++;
+      });
+
+      // Add a row for total expenses
+      tableData.rows.push([
+          { text: 'Total', colSpan: 2, alignment: 'right' },
+          '',
+          `₹${totalUserExpense}`
+      ]);
+
+      // Define PDF document structure
+      const docDefinition = {
+          content: [
+              { text: `Expense Sheet for ${user.name}`, style: 'header' },
+              { text: '\n' },
+              {
+                  table: {
+                      headerRows: 1,
+                      widths: ['*', '*', '*'],
+                      body: [
+                          tableData.headers,
+                          ...tableData.rows.map(row => row.map(cell => ({ text: cell, alignment: 'center' })))
+                      ],
+                  },
+                  layout: 'lightHorizontalLines', 
+              },
+          ],
+          styles: {
+              header: {
+                  fontSize: 25,
+                  bold: true,
+                  alignment: 'center',
+              },
           },
-          layout: 'lightHorizontalLines', 
-        },
-      ],
-      styles: {
-        header: {
-          fontSize: 25,
-          bold: true,
-          alignment: 'center',
-        },
-      },
-    };
+      };
 
-    // Create PDF and save it
-    const pdfDoc = pdfMake.createPdf(docDefinition);
-    const filePath = path.resolve(`./balance-sheets/balance-sheet-${userId}.pdf`);
-    
-    pdfDoc.getBuffer((buffer) => {
-      fs.writeFileSync(filePath, buffer);
-      res.status(200).json({ message: 'Balance sheet generated', filePath });
-    });
+      // Create PDF
+      const pdfDoc = pdfMake.createPdf(docDefinition);
+      pdfDoc.getBuffer((buffer) => {
+          const filePath = path.resolve(`./balance-sheets/balance-sheet-${userId}.pdf`);
+
+          // Save the PDF to a file
+          fs.writeFileSync(filePath, buffer);
+
+          // Send the PDF as a response
+          res.setHeader('Content-Type', 'application/pdf');
+          res.setHeader('Content-Disposition', `attachment; filename="balance-sheet-${userId}.pdf"`);
+          res.setHeader('Content-Length', buffer.length);
+          res.end(buffer); 
+          // Send the buffer as a response
+      });
 
   } catch (error) {
-    res.status(500).json({ message: 'Error generating balance sheet', error: error.message });
+      console.error('Error generating balance sheet:', error); 
+      res.status(500).json({ message: 'Error generating balance sheet', error: error.message });
   }
 };
+
 
 
