@@ -229,20 +229,13 @@ export const generateBalanceSheet = async (req, res) => {
           },
       };
 
-      // Create PDF
-      const pdfDoc = pdfMake.createPdf(docDefinition);
-      pdfDoc.getBuffer((buffer) => {
-          const filePath = path.resolve(`./balance-sheets/balance-sheet-${userId}.pdf`);
-
-          // Save the PDF to a file
-          fs.writeFileSync(filePath, buffer);
-
+      // Create PDF and send directly as a response
+      pdfMake.createPdf(docDefinition).getBuffer((buffer) => {
           // Send the PDF as a response
           res.setHeader('Content-Type', 'application/pdf');
           res.setHeader('Content-Disposition', `attachment; filename="balance-sheet-${userId}.pdf"`);
           res.setHeader('Content-Length', buffer.length);
-          res.end(buffer); 
-          // Send the buffer as a response
+          res.end(buffer); // Send the buffer as a response
       });
 
   } catch (error) {
