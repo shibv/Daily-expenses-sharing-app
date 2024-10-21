@@ -89,7 +89,7 @@ export const generateOverallBalanceSheet = async (req, res) => {
       }
 
       // Prepare table data for PDF
-      const tableBody = [['Expense #', 'User', 'Individual Amount']]; 
+      const tableBody = [['Expense #', 'User', 'Individual Amount']]; // Header Row
 
       expenses.forEach((exp, index) => {
           const numParticipants = exp.participants.length;
@@ -125,7 +125,7 @@ export const generateOverallBalanceSheet = async (req, res) => {
                       widths: ['*', '*', '*'],
                       body: tableBody,
                   },
-                  layout: 'lightHorizontalLines', 
+                  layout: 'lightHorizontalLines', // Use a simple layout
               },
           ],
           styles: {
@@ -137,23 +137,17 @@ export const generateOverallBalanceSheet = async (req, res) => {
           },
       };
 
-      // Create PDF
-      const pdfDoc = pdfMake.createPdf(docDefinition);
-      pdfDoc.getBuffer((buffer) => {
-          const filePath = path.resolve('./balance-sheets/overall-balance-sheet.pdf');
-
-          // Save the PDF to a file
-          fs.writeFileSync(filePath, buffer);
-
+      // Create PDF and get buffer
+      pdfMake.createPdf(docDefinition).getBuffer((buffer) => {
           // Send the PDF as a response
           res.setHeader('Content-Type', 'application/pdf');
           res.setHeader('Content-Disposition', `attachment; filename="overall-balance-sheet.pdf"`);
           res.setHeader('Content-Length', buffer.length);
-          res.end(buffer); 
+          res.end(buffer); // Send the buffer as a response
       });
 
   } catch (error) {
-      console.error('Error generating overall balance sheet:', error); 
+      console.error('Error generating overall balance sheet:', error); // Log the error
       res.status(500).json({ message: 'Error generating overall balance sheet', error: error.message });
   }
 };
