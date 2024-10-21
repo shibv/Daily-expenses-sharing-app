@@ -21,6 +21,9 @@ app.use('/api', expenseRoutes);
 // Error handler
 app.use(errorHandler);
 
+app.get('/', (req, res) => {
+  res.send('Welcome to the Daily Expenses Sharing Application API!');
+});
 
 const PORT = process.env.PORT || 5000;
 
